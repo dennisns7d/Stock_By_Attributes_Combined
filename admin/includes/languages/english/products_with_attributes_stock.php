@@ -55,4 +55,7 @@ define('PWA_UPDATE_FAILURE', 'Product %1$d update failed: %2$s');
 define('PWA_PARENT_QUANTITY_UPDATE_SUCCESS', 'Parent Product Quantity Updated');
 define('PWA_PARENT_QUANTITIES_UPDATE_SUCCESS', 'Parent Product Quantities Updated');
 define('PWA_SORT_UPDATE_SUCCESS', '%1$d stock attributes updated for sort by primary attribute sort order');
+define('PWA_ADJUST_QUANTITY_SUCCESS', 'Product %1$d with stock_id %2$d has been updated by %3$f to a value of %4$f.');
 define('PWA_BUTTON_SEARCH', 'Search');
+define('PWA_BUTTON_ADJUST', 'Adjust');
+
