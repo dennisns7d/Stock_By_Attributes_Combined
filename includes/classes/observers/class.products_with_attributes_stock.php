@@ -192,20 +192,25 @@ class products_with_attributes_stock extends base {
   }
   /*
    * NOTIFY_ATTRIBUTES_MODULE_START_OPTION
+   * Added by SBA for ZC 1.5.0 through 1.5.4.
+   * ZC 1.5.5, ZC 1.5.6,
+   * ZC 1.5.7: $zco_notifier->notify('NOTIFY_ATTRIBUTES_MODULE_START_OPTION', $products_options_names->fields);
    */
-   function updateNotifyAttributesModuleStartOption(&$callingClass, $notifier, $paramsArray) {
+   function updateNotifyAttributesModuleStartOption(&$callingClass, $notifier, $products_options_names_fields) {
      global $db, $sql, /*$options_menu_images, $moveSelectedAttribute, */
-        $products_options_array, $options_attributes_image,
-        $products_options_names, /*$products_options_names_count,*/
+        $products_options_array, /*$options_attributes_image,*/
+        /*$products_options_names, *//*$products_options_names_count,*/
        /*$stock,*/ $is_SBA_product, $order_by, $products_options; //, $pwas_class;
      
      $this->_options_menu_images = array();
      $this->_moveSelectedAttribute = false;
-     $products_options_array = array();
+     if (!isset($products_options_array)) {
+       $products_options_array = array();
+     }
 //     $options_attributes_image = array();
      // Could do the calculation here the first time set a variable above as part of the class and then reuse that... instead of the modification to the attributes file...
      if (!zen_not_null($this->_products_options_names_count)) {
-       $this->_products_options_names_count = $products_options_names->RecordCount();
+       $this->_products_options_names_count = $GLOBALS['products_options_names']->RecordCount();
      }
 //     $products_options_names_count = $products_options_names->RecordCount();
      $this->_isSBA = false;
@@ -220,6 +225,8 @@ class products_with_attributes_stock extends base {
      if (!$this->_isSBA) {
       return;
      }
+
+      $products_options_type = $products_options_names_fields['products_options_type'];
        // Want to do a SQL statement to see the quantity of non-READONLY attributes.  If there is only one non-READONLY attribute, then
        //   do additional SQL to add the "missing" attributes that would get displayed.  But, do not have the "main" sql modified otherwise
        //   the display will get all wonky (multiple listings where not desired).  Will need to modify the SQL result for each result applicable to the
@@ -227,7 +234,7 @@ class products_with_attributes_stock extends base {
        // Understand that already cycling through the product options, therefore if there are multiple options, the current option is not readonly
        //   and there is only one non-readonly attribute, then that is when the "new" sql needs to be activated to populate the current option...
        $process_this = false;
-       if (!$this->_noread_done && $products_options_names->fields['products_options_type'] != PRODUCTS_OPTIONS_TYPE_READONLY && $products_options_names->RecordCount() > 1) {
+       if (!$this->_noread_done && $products_options_type != PRODUCTS_OPTIONS_TYPE_READONLY && $this->_products_options_names_count > 1) {
          $sql_noread = "SELECT count(distinct products_options_id) AS total
            FROM " . TABLE_PRODUCTS_OPTIONS . " popt, " . TABLE_PRODUCTS_ATTRIBUTES . " patrib where patrib.products_id = :products_id:
            AND patrib.options_id = popt.products_options_id
@@ -262,8 +269,8 @@ class products_with_attributes_stock extends base {
                 )
                 && defined('SBA_SHOW_OUT_OF_STOCK_ATTR_ON_PRODUCT_INFO') && SBA_SHOW_OUT_OF_STOCK_ATTR_ON_PRODUCT_INFO == '0'
                 && (!defined('PRODINFO_ATTRIBUTE_DYNAMIC_STATUS') || (PRODINFO_ATTRIBUTE_DYNAMIC_STATUS != '1' && PRODINFO_ATTRIBUTE_DYNAMIC_STATUS != '3'))
-                && (!defined('PRODUCTS_OPTIONS_TYPE_GRID') || $products_options_names->fields['products_options_type'] != PRODUCTS_OPTIONS_TYPE_GRID)
-                && (!defined('PRODUCTS_OPTIONS_TYPE_ATTRIBUTE_GRID') || $products_options_names->fields['products_options_type'] != PRODUCTS_OPTIONS_TYPE_ATTRIBUTE_GRID)
+                && (!defined('PRODUCTS_OPTIONS_TYPE_GRID') || $products_options_type != PRODUCTS_OPTIONS_TYPE_GRID)
+                && (!defined('PRODUCTS_OPTIONS_TYPE_ATTRIBUTE_GRID') || $products_options_type != PRODUCTS_OPTIONS_TYPE_ATTRIBUTE_GRID)
               ) 
                ? " AND (pas.quantity > '0' OR (pas.quantity IS NULL AND pa.attributes_display_only = '1')) "
                : ""
@@ -272,7 +279,7 @@ class products_with_attributes_stock extends base {
             $order_by;
               
        $sql = $db->bindVars($sql, ':products_id:', $_GET['products_id'], 'integer');
-       $sql = $db->bindVars($sql, ':options_id:', $products_options_names->fields['products_options_id'], 'integer');
+       $sql = $db->bindVars($sql, ':options_id:', $products_options_names_fields['products_options_id'], 'integer');
        $sql = $db->bindVars($sql, ':languages_id:', $_SESSION['languages_id'], 'integer');
 
        $products_options = $db->Execute($sql);
@@ -599,22 +606,76 @@ class products_with_attributes_stock extends base {
               //   and disabled, then try to bump to the next attribute.
               //  if the last attribute is default and disabled, then try to bump to the first/next
               //  if all are disabled, then what is to be addressed? Should it be programatic or
+        $move2next = false;
         while (!$products_opt->EOF) {
-          if ($prevent_checkout && $products_opt->fields['pasqty'] <= 0 && ($products_opt->fields['attributes_display_only'] && $products_opt->fields['attributes_default'])) {
-            $disablebackorder[] = null;
-          } elseif ($prevent_checkout && $products_opt->fields['pasqty'] <= 0 && /*$products_opt->fields['products_options_values_id'] != $selected_attribute &&*/ $products_opt->fields['attributes_display_only'] && !$products_opt->fields['attributes_default']) { // If the first item is set as disabled and there is no default, then this could cause the product to be incorrectly added to the cart.
+          // Early escape if there is no reason to specifically disable the option.
+          if (!$prevent_checkout
+            || $products_opt->fields['pasqty'] > 0
+            || $products_opt->fields['attributes_display_only'] && $products_opt->fields['attributes_default']) {
+
+            $disablebackorder[] = '';
+            // If previous selected default was invalid, then because this option is "selectable", make it the new default.
+            if ($move2next) {
+              $selected_attribute = $products_opt->fields['options_values_id'];
+              $move2next = false;
+            }
+            $products_opt->MoveNext();
+            continue;
+          }
+
+          // Identify if the given option name/option value combination is defined as a specific variant for this specific selection.
+          //   This only really works for single optin name product or if each option name/option value is split out. For combined attributes, this
+          //   does not properly identify the presence/existence of the variant.  That aspect probably needs to be controlled from the front end of
+          //   the store via javascript/jQuery and/or upon selection of the combination without the extra screen modification.
+          $isDefined = !empty($_SESSION['pwas_class2']->zen_get_sba_attribute_info($prod_id, array($products_opt->fields['options_id'] => $products_opt->fields['options_values_id']) /*$products_options_array*/, 'product', 'ids'));
+          // If the item is display only then disable it from selection. display_only with default is handled above.
+          if ($products_opt->fields['attributes_display_only'] && !$products_opt->fields['attributes_default']) {
             $disablebackorder[] = ' disabled="disabled" ';
-          } elseif ($prevent_checkout && $products_opt->fields['pasqty'] <= 0 && $products_opt->fields['attributes_default']) { // If the first item is set as disabled and there is no default, then this could cause the product to be incorrectly added to the cart.
-            $disablebackorder[] = null;
-          } elseif ($prevent_checkout && $products_opt->fields['pasqty'] <= 0) {
+          } elseif ($isDefined && $products_opt->fields['attributes_default']) {
+            // If the option name/option value combination has its own stock_id and it is/was a default, then because there is insufficient stock, disable it.
+            //   Also, because it was set as a default, then this selects/suggests another default be selected so that at least one is chosen.
+            $disablebackorder[] = ' disabled="disabled" '; //' disabled="disabled" ';
+            $move2next = true;
+          } elseif ($isDefined) {
+            // By this point, it is not display only, it is not a default, it is identified as a known variant, it is out of stock and not
+            //   permitted to be added to the cart, so disable it.
             $disablebackorder[] = ' disabled="disabled" ';
-          } else {  
-            $disablebackorder[] = null;
+          } elseif (zen_get_products_stock($products_opt->fields['products_id']) <= 0) {
+            // Basically the expectation is that this options_id/options value doesn't have a variant defined and the total quantity of product is <=0
+            //   then disable the option as a general rule
+            $disablebackorder[] = ' disabled="disabled" ';
+          } else {
+            // There doesn't appear to be any remaining reason to disable the variant, so allow it to be added and go ahead and suggest this variant as the new default.
+            $disablebackorder[] = '';
+            if ($move2next) {
+              $selected_attribute = $products_opt->fields['options_values_id'];
+              $move2next = false;
+            }
           }
           $products_opt->MoveNext();
         }
         unset($products_opt);
         unset($prevent_checkout);
+        // If have exited the above loop and still need to resolve to the next option value, attempt to find the next available option value.
+        if($move2next) {
+          $sba_counter = 0;
+          foreach ($products_options_array as $prod_key => $prod_val) {
+            // The $disablebackorder array is 0 based and is expected to be one for one to $products_options_array at least in sequence, though not
+            //   necessarily in number.  If the current options are not disabled, then allow it to become the new default.
+            if (empty($disablebackorder[$sba_counter])) {
+              $selected_attribute = $prod_val['id'];
+              $move2next = false;
+              break; // Don't try to process any further items in array.
+            }
+            $sba_counter++;
+          }
+
+          // try to find another solution that is currently available, if none then set to the first one as an "possibility"?
+          if ($move2next) {
+            $selected_attribute = $products_options_array[0]['id'];
+            $move2next = false;
+          }
+        }
         
           //var_dump($products_options_array); //Debug Line
           $options_html_id[] = 'drp-attrib-' . $products_options_names_fields['products_options_id'];

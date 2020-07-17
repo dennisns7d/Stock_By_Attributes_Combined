@@ -242,14 +242,14 @@ class products_with_attributes_stock extends base
               
       $attributes = $db->Execute($query);
 
-      $attributes_output = false;
-      if (!$attributes->EOF) {
-        $attributes_output = array(
-                                   'option' => $attributes->fields['products_options_name'],
-                                   'value' => $attributes->fields['products_options_values_name'],
-                                  );
+      if ($attributes->RecordCount() == 0) {
+        return false;
       }
-      return $attributes_output;
+
+      return array(
+                   'option' => $attributes->fields['products_options_name'],
+                   'value' => $attributes->fields['products_options_values_name'],
+                   );
     }
         
         
@@ -269,6 +269,8 @@ class products_with_attributes_stock extends base
         } else { 
           $language_id = 1;
         }
+        $s = '';
+        $w = '';
         if (isset($_GET['search']) && $_GET['search']) { // mc12345678 Why was $_GET['search'] omitted?
             $s = zen_db_input($_GET['search']);
            //$w = "(p.products_id = '$s' OR d.products_name LIKE '%$s%' OR p.products_model LIKE '%$s%') AND  " ;//original version of search
@@ -283,9 +285,6 @@ class products_with_attributes_stock extends base
                       WHERE pwas.customid 
                         LIKE '%$s%')
                         ) "; //changed search to products_model 'starts with'.
-        } else {
-          $w = ''; 
-          $s = '';
         }
 
         //Show last edited record or Limit number of records displayed on page
@@ -480,6 +479,7 @@ class products_with_attributes_stock extends base
                   foreach ($attributes_of_stock as $attri_id)
                   {
                       $stock_attribute = $this->get_attributes_name($attri_id['products_attributes_id'], $attri_id['language_id']/*$_SESSION['languages_id']*/);
+                      if ($stock_attribute === false) continue; // If the products_attributes_id is not found in the selected language then move on.
                       if ($stock_attribute['option'] == '' && $stock_attribute['value'] == '') {
                         // delete stock attribute
                         $db->Execute("DELETE FROM " . TABLE_PRODUCTS_WITH_ATTRIBUTES_STOCK . " WHERE stock_id = " . $attribute_products->fields['stock_id'] . " LIMIT 1;");
