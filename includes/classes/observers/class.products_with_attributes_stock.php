@@ -220,7 +220,7 @@ class products_with_attributes_stock extends base {
      }
 //     $options_attributes_image = array();
      // Could do the calculation here the first time set a variable above as part of the class and then reuse that... instead of the modification to the attributes file...
-     if (!zen_not_null($this->_products_options_names_count)) {
+     if (empty($this->_products_options_names_count)) {
        $this->_products_options_names_count = $GLOBALS['products_options_names']->RecordCount();
      }
 //     $products_options_names_count = $products_options_names->RecordCount();
@@ -1603,6 +1603,9 @@ class products_with_attributes_stock extends base {
       }
 
     } // EOF for ($i = 0, $n = count($productArray); $i < $n; $i++) {
+    if (empty($flagAnyOutOfStock) && ($flagAnyInsideOutOfStock || $flagAnyOutsideOutOfStock)) {
+      $flagAnyOutOfStock = $flagAnyInsideOutOfStock || $flagAnyOutsideOutOfStock;
+    }
     if (!$flagAnyInsideOutOfStock && !$flagAnyOutsideOutOfStock) {
       $flagAnyOutOfStock = '';
     }

@@ -26,13 +26,56 @@ if (!function_exists('zen_draw_label')) {
   }
 }
 
+function preg_val_new($attributes, $arr_split)
+{
+  $attributes = preg_replace("/\,{2,}/i", ",", $attributes);
+  $arrTemp = preg_split("/\,/", $attributes);
+  $arrMain = array();
+
+  for ($i = 0, $arrTempCount = count($arrTemp); $i < $arrTempCount; $i++) {
+    //explode array on |
+    $arrTemp[$i] = preg_replace("/\\" . $arr_split . "{2,}/i", $arr_split, $arrTemp[$i]);
+    if (null === $arrTemp[$i]) {
+      continue;
+    }
+
+    $arrTemp1 = preg_split("/\\" . $arr_split . "/", $arrTemp[$i]);
+    if ($arrTemp1 === false) {
+      continue;
+    }
+
+    if (is_array($arrTemp1)) {
+      foreach ($arrTemp1 as $k2 => $v2) {
+        if (!zen_not_null($v2)) { // $v2 is supposed to be a string, therefore good here.
+          unset($arrTemp1[$k2]);
+        }
+      }
+    }
+    if (!zen_not_null($arrTemp1)) {
+      unset($arrTemp1);
+    }
+    if (isset($arrTemp1) && zen_not_null($arrTemp1)) {
+      $arrMain[] = $arrTemp1 = array_values($arrTemp1);
+    }
+  }
+
+  foreach ($arrMain as $key => $value) {
+    if (zen_not_null($arrMain[$key])) {
+      continue;
+    }
+    unset($arrMain[$key]);
+  }
+  $arrMain = array_values($arrMain);
+  return $arrMain;
+}
+
 //new object from class
 //$stock = new products_with_attributes_stock;
 $stock = $products_with_attributes_stock_class;
 
   $language_id = (isset($_SESSION['languages_id']) ? (int)$_SESSION['languages_id'] : 0);
 //set language
-if (!$language_id) {
+if (empty($language_id)) {
 
   $languages = zen_get_languages();
   $languages_array = array();
@@ -53,7 +96,7 @@ if (!$language_id) {
 if (zen_not_null($action)) {
   if (!isset($products_filter)) $products_filter = 0;
 
-  $_GET['products_filter'] = $products_filter = (isset($_GET['products_filter']) ? (int)$_GET['products_filter'] : (int)$products_filter);
+  $_GET['products_filter'] = $products_filter = (isset($_GET['products_filter']) && zen_not_null($_GET['products_filter']) ? (int)$_GET['products_filter'] : (int)$products_filter);
   $_GET['attributes_id'] = (isset($_GET['attributes_id']) ? (int)$_GET['attributes_id'] : 0);
 
   $_GET['current_category_id'] = $current_category_id = (isset($_GET['current_category_id']) ? (int)$_GET['current_category_id'] : (int)$current_category_id);
@@ -78,10 +121,10 @@ if (zen_not_null($action)) {
     zen_redirect(zen_href_link(FILENAME_PRODUCTS_WITH_ATTRIBUTES_STOCK, 'products_filter=' . $products_filter . '&current_category_id=' . $current_category_id));
   }*/
 
-  if (!zen_not_null($products_filter)) {
+  if (empty($products_filter)) {
     if (empty($current_category_id)) {
       $reset_categories_id = zen_get_category_tree('', '', '0', '', '', true);
-      $current_category_id = $reset_categories_id[0]['id'];
+      $current_category_id = (int)$reset_categories_id[0]['id'];
     }
 
     $sql =     "select ptc.*
@@ -89,19 +132,24 @@ if (zen_not_null($action)) {
       left join " . TABLE_PRODUCTS_DESCRIPTION . " pd
       on ptc.products_id = pd.products_id
       and pd.language_id = " . (int)$_SESSION['languages_id'] . "
-      where ptc.categories_id=" . $current_category_id . "
+      where ptc.categories_id=" . (int)$current_category_id . "
       order by pd.products_name";
       $new_product_query = $db->Execute($sql);
 
-    $products_filter = isset($new_product_query->fields['products_id']) ? $new_product_query->fields['products_id'] : 0;
+    $products_filter = !empty($new_product_query->fields['products_id']) ? $new_product_query->fields['products_id'] : 0;
 
   // set categories and products if not set
-    if (empty($reset_categories_id)) {
+/*    if (empty($reset_categories_id)) {
       if (!empty($products_filter)) {
         zen_redirect(zen_href_link(FILENAME_PRODUCTS_WITH_ATTRIBUTES_STOCK, 'products_filter=' . $products_filter . '&current_category_id=' . $current_category_id));
       }
     } else {
       $_GET['products_filter'] = $products_filter;
+    }*/
+    if (!empty($reset_categories_id)) {
+      $_GET['products_filter'] = $products_filter;
+    } else if (!empty($products_filter)) {
+        zen_redirect(zen_href_link(FILENAME_PRODUCTS_WITH_ATTRIBUTES_STOCK, 'products_filter=' . $products_filter . '&current_category_id=' . $current_category_id));
     }
   }
 
@@ -117,31 +165,30 @@ switch ($action) {
   case 'add':
     $hidden_form = '';
 
-    if (isset($_GET['products_id']) && (int) $_GET['products_id'] > 0) {
-      $products_id = (int) $_GET['products_id'];
+    if (!empty($_GET['products_id']) && (int)$_GET['products_id'] > 0) {
+      $products_id = (int)$_GET['products_id'];
     }
-    if (isset($_POST['products_id']) && (int) $_POST['products_id'] > 0) {
-      $products_id = (int) $_POST['products_id'];
+    if (!empty($_POST['products_id']) && (int)$_POST['products_id'] > 0) {
+      $products_id = (int)$_POST['products_id'];
     }
 
     if (isset($products_id)) {
 
-      if (zen_products_id_valid($products_id)) {
-
-        $product_name = zen_get_products_name($products_id);
-        $product_attributes = $stock->get_products_attributes($products_id, $language_id);
-
-        $hidden_form .= zen_draw_hidden_field('products_id', $products_id) . "\n";
-
-        if (isset($_GET['action']) && zen_not_null($_GET['action'])) {
-          $hidden_form .= zen_draw_hidden_field('last_action', $_GET['action']) . "\n";
-        }
-
-        if (isset($_GET['search_order_by']) && zen_not_null($_GET['search_order_by'])) {
-          $hidden_form .= zen_draw_hidden_field('search_order_by', $_GET['search_order_by']) . "\n";
-        }
-      } else {
+      if (!zen_products_id_valid($products_id)) {
         zen_redirect(zen_href_link(FILENAME_PRODUCTS_WITH_ATTRIBUTES_STOCK, zen_get_all_get_params(array('action')), $request_type));
+      }
+
+      $product_name = zen_get_products_name($products_id);
+      $product_attributes = $stock->get_products_attributes($products_id, $language_id);
+
+      $hidden_form .= zen_draw_hidden_field('products_id', $products_id) . "\n";
+
+      if (isset($_GET['action']) && zen_not_null($_GET['action'])) {
+        $hidden_form .= zen_draw_hidden_field('last_action', $_GET['action']) . "\n";
+      }
+
+      if (isset($_GET['search_order_by']) && zen_not_null($_GET['search_order_by'])) {
+        $hidden_form .= zen_draw_hidden_field('search_order_by', $_GET['search_order_by']) . "\n";
       }
     } else {
 
@@ -174,12 +221,12 @@ switch ($action) {
       $products_id = (int)$_POST['products_id'];
     }
 
-    if (isset($_GET['attributes']) && $_GET['attributes'] != '') {
+    if (isset($_GET['attributes']) && $_GET['attributes'] != '') { // @TODO: perhaps use zen_not_null?
       $attributes = $_GET['attributes'];
       $hidden_form .= zen_draw_hidden_field('attributes_selected', $_GET['attributes']) . "\n";
     }
 
-    if (isset($_GET['action']) && zen_not_null($_GET['action'])) {
+    if (isset($_GET['action']) && zen_not_null($_GET['action'])) { // While within the existing eval of $_GET['action'], don't have to fully test here.
       $hidden_form .= zen_draw_hidden_field('last_action', $_GET['action']) . "\n";
     }
 
@@ -191,16 +238,16 @@ switch ($action) {
       $hidden_form .= zen_draw_hidden_field('search_order_by', $_GET['search_order_by']) . "\n";
     }
 
-    if (isset($products_id) && isset($attributes)) {
-      $attributes = explode(',', $attributes);
-      foreach ($attributes as $attribute_id) {
-        $hidden_form .= zen_draw_hidden_field('attributes[]', $attribute_id) . "\n";
-        $attributes_list[] = $stock->get_attributes_name($attribute_id, $language_id);
-      }
-      $hidden_form .= zen_draw_hidden_field('products_id', $products_id) . "\n";
-    } else {
+    if (!isset($products_id) || !isset($attributes)) {
       zen_redirect(zen_href_link(FILENAME_PRODUCTS_WITH_ATTRIBUTES_STOCK, zen_get_all_get_params(array('action')), $request_type));
     }
+
+    $attributes = explode(',', $attributes);
+    foreach ($attributes as $attribute_id) {
+      $hidden_form .= zen_draw_hidden_field('attributes[]', $attribute_id) . "\n";
+      $attributes_list[] = $stock->get_attributes_name($attribute_id, $language_id);
+    }
+    $hidden_form .= zen_draw_hidden_field('products_id', $products_id) . "\n";
     break;
 
   case 'confirm':
@@ -371,13 +418,17 @@ switch ($action) {
      */
     if ((isset($_POST['add_edit']) && ($_POST['add_edit'] == 'add')) || (isset($_GET['add_edit']) && ($_GET['add_edit'] == 'add'))) { //s_mack:noconfirm
       $attributes = ltrim($attributes, ','); //remove extra comma separators
+      $seperator = array('|', ';',);
 
       if (preg_match("/\|/", $attributes) && preg_match("/\;/", $attributes)) {
         $saveResult = null;
         $messageStack->add_session(PWA_MIX_ERROR_ALL_COMBO, 'failure');
-      } elseif (preg_match("/\|/", $attributes)) {
+      } elseif (preg_match("/\\" . $seperator[0] . "/", $attributes)) {
         // All attributes individually added.
         //explode array on ,
+        $arrMain = preg_val_new($attributes, $seperator[0]);
+
+/*
         $attributes = preg_replace("/\,{2,}/i", ",", $attributes);
         $arrTemp = preg_split("/\,/", $attributes);
         $arrMain = array();
@@ -385,14 +436,22 @@ switch ($action) {
 
         for ($i = 0, $arrTempCount = count($arrTemp); $i < $arrTempCount; $i++) {
           //explode array on |
-          $arrTemp[$i] = preg_replace("/\|{2,}/i", "|", $arrTemp[$i]);
-          $arrTemp1 = preg_split("/\|/", $arrTemp[$i]);
+          $arrTemp[$i] = preg_replace("/\\" . $seperator[0]. "{2,}/i", $seperator[0], $arrTemp[$i]);
+          if (null === $arrTemp[$i]) {
+              continue;
+          }
+
+          $arrTemp1 = preg_split("/\\" . $seperator[0]. "/", $arrTemp[$i]);
+          if ($arrTemp1 === false) {
+              continue;
+          }
+
           $arrMain[] = $arrTemp1;
 
           foreach ($arrMain as $key => $value) {
             if (is_array($value)) {
               foreach ($value as $k2 => $v2) {
-                if (!zen_not_null($v2)) {
+                if (!zen_not_null($v2)) { // $v2 is supposed to be a string, therefore good here.
                   unset($arrMain[$key][$k2]);
                 }
               }
@@ -400,7 +459,7 @@ switch ($action) {
                 unset($arrMain[$key]);
               }
             } else {
-              if (!zen_not_null($value)) {
+              if (!zen_not_null($value)) { // $value is supposed to be a string, therefore good here.
                 unset($arrMain[$key]);
               }
             }
@@ -410,13 +469,13 @@ switch ($action) {
           }
 
           $arrMain = array_values($arrMain);
-
+*/
 /*          if ($intCount) {
             $intCount = $intCount * count($arrTemp1);
           } else {
             $intCount = count($arrTemp1);
           }*/
-        }
+//        }
         $intVars = count($arrMain);
         $arrNew = array();
 
@@ -439,8 +498,10 @@ switch ($action) {
             $saveResult = $stock->insertNewAttribQty($products_id, $productAttributeCombo, $strAttributes, $quantity); //can not include the $customid since it must be unique
           }
         }
-      } elseif (preg_match("/\;/", $attributes)) {
+      } elseif (preg_match("/\\" . $seperator[1] . "/", $attributes)) {
         // Attributes combined with others.
+        $arrMain = preg_val_new($attributes, $seperator[1]);
+/*
         //explode array on ,
         $attributes = preg_replace("/,{2,}/i", ",", $attributes);
         $arrTemp = preg_split("/\,/", $attributes);
@@ -456,7 +517,7 @@ switch ($action) {
           foreach ($arrMain as $key => $value) {
             if (is_array($value)) {
               foreach ($value as $k2 => $v2) {
-                if (!zen_not_null($v2)) {
+                if (!zen_not_null($v2)) { // $v2 is supposed to be a string, therefore good here.
                   unset($arrMain[$key][$k2]);
                 }
               }
@@ -464,7 +525,7 @@ switch ($action) {
                 unset($arrMain[$key]);
               }
             } else {
-              if (!zen_not_null($value)) {
+              if (!zen_not_null($value)) { // $value is supposed to be a string, therefore good here.
                 unset($arrMain[$key]);
               }
             }
@@ -474,13 +535,13 @@ switch ($action) {
           }
 
           $arrMain = array_values($arrMain);
-          
+*/
 /*          if ($intCount) {
             $intCount = $intCount * count($arrTemp1);
           } else {
             $intCount = count($arrTemp1);
           }*/
-        }
+//        }
         $intVars = count($arrMain);
         $arrNew = array();
 
@@ -561,7 +622,7 @@ switch ($action) {
             unset($arrAttributes[$arrAttrKey]);
           }
         }*/
-        sort($arrAttributes);
+        sort($arrAttributes); // @TODO could have used natsort possibly without the previous int cast.
         $strAttributes = implode(",", $arrAttributes);
         $productAttributeCombo = $products_id . '-' . str_replace(',', '-', $strAttributes);
         $saveResult = $stock->insertNewAttribQty($products_id, $productAttributeCombo, $strAttributes, $quantity, $customid, $skuTitle);
